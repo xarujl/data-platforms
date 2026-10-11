@@ -1,0 +1,44 @@
+---
+- name: Подготовка edge и запуск внутреннего плейбука
+  hosts: edge
+  vars_files:
+    - edge/group_vars/all.yml
+
+  tasks:
+    - name: Установка Ansible
+      become: true
+      ansible.builtin.apt:
+        name:
+          - ansible-core
+          - ca-certificates
+        state: present
+        update_cache: true
+
+    - name: Создание директории проекта
+      ansible.builtin.file:
+        path: "{{ edge_project_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Копирование файлов проекта
+      ansible.builtin.copy:
+        src: edge/
+        dest: "{{ edge_project_dir }}/"
+        mode: preserve
+        directory_mode: "0755"
+
+    - name: Запуск внутреннего плейбука на edge
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/ansible-playbook
+          - -i
+          - inventory.ini
+          - prepare.yml
+        chdir: "{{ edge_project_dir }}"
+      environment:
+        ANSIBLE_CONFIG: "{{ edge_project_dir }}/ansible.cfg"
+      register: inner_run
+
+    - name: Реультаты
+      ansible.builtin.debug:
+        var: inner_run.stdout_lines

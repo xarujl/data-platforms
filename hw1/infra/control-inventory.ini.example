@@ -1,0 +1,3 @@
+[edge]
+edge-node ansible_host=EDGE_PUBLIC_IP ansible_user=team
+# EDGE_PUBLIC_IP заменить на адрес эдж ноды

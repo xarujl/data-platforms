@@ -1,0 +1,108 @@
+---
+- name: Скачивание Hadoop на edge
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Создание папки для скачивания Hadoop
+      ansible.builtin.file:
+        path: "{{ edge_cache_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Скачивание Hadoop
+      ansible.builtin.get_url:
+        url: "{{ hadoop_download_url }}"
+        dest: "{{ edge_cache_dir }}/{{ hadoop_archive }}"
+        mode: "0644"
+        timeout: 120
+
+- name: Java и Hadoop на машины
+  hosts: hdfs
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Java 11
+      ansible.builtin.apt:
+        name:
+          - openjdk-11-jdk-headless
+          - tar
+          - gzip
+          - ca-certificates
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Группа для Hadoop
+      ansible.builtin.group:
+        name: hadoop
+        system: true
+
+    - name: Создание пользователя HDFS
+      ansible.builtin.user:
+        name: hdfs
+        group: hadoop
+        home: /var/lib/hadoop
+        create_home: false
+        shell: /usr/sbin/nologin
+        system: true
+
+    - name: Создание общих директорий
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: hdfs
+        group: hadoop
+        mode: "0750"
+      loop:
+        - /var/lib/hadoop
+        - /var/lib/hadoop/hdfs
+
+    - name: Создание директорий хранения для ролей
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: hdfs
+        group: hadoop
+        mode: "0750"
+      loop:
+        - { path: "{{ hadoop_namenode_dir }}", role: namenode }
+        - { path: "{{ hadoop_secondary_dir }}", role: secondary }
+        - { path: "{{ hadoop_datanode_dir }}", role: datanodes }
+      when: item.role in group_names
+
+    - name: Установка Hadoop из кэша на edge
+      ansible.builtin.unarchive:
+        src: "{{ edge_cache_dir }}/{{ hadoop_archive }}"
+        dest: /opt
+        remote_src: false
+        creates: "{{ hadoop_home }}/bin/hadoop"
+        owner: hdfs
+        group: hadoop
+
+    - name: Настройка Java для Hadoop
+      ansible.builtin.blockinfile:
+        path: "{{ hadoop_conf_dir }}/hadoop-env.sh"
+        block: |
+          export JAVA_HOME={{ hadoop_java_home }}
+
+    - name: Проверяем Hadoop
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hadoop"
+          - version
+      environment:
+        JAVA_HOME: "{{ hadoop_java_home }}"
+      register: installed_hadoop
+      changed_when: false
+
+    - name: На всякий случай проверка версии :)
+      ansible.builtin.assert:
+        that:
+          - installed_hadoop.stdout_lines[0] == 'Hadoop ' ~ hadoop_version
+        success_msg: "{{ inventory_hostname }}: Hadoop {{ hadoop_version }} is installed."

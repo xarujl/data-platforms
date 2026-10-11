@@ -1,0 +1,21 @@
+# заменить на нужные адреса
+[namenode]
+nn ansible_host=NN_IP
+
+[secondary]
+dn0 ansible_host=DN0_IP
+
+[datanodes]
+nn
+dn0
+dn1 ansible_host=DN1_IP
+
+[hdfs:children]
+namenode
+secondary
+datanodes
+
+[hdfs:vars]
+ansible_user=team
+ansible_ssh_private_key_file=/home/team/.ssh/team_internal
+ansible_become=true

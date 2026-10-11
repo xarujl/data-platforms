@@ -1,0 +1,21 @@
+---
+hadoop_version: "3.4.0"
+hadoop_archive: "hadoop-{{ hadoop_version }}.tar.gz"
+hadoop_download_url: "https://archive.apache.org/dist/hadoop/common/hadoop-{{ hadoop_version }}/{{ hadoop_archive }}"
+
+edge_project_dir: /home/team/hdfs-ansible
+edge_cache_dir: "{{ playbook_dir }}/.cache"
+
+hadoop_java_home: /usr/lib/jvm/java-11-openjdk-amd64
+hadoop_home: "/opt/hadoop-{{ hadoop_version }}"
+hadoop_conf_dir: "{{ hadoop_home }}/etc/hadoop"
+hadoop_namenode_dir: /var/lib/hadoop/hdfs/namenode
+hadoop_secondary_dir: /var/lib/hadoop/hdfs/secondary
+hadoop_datanode_dir: /var/lib/hadoop/hdfs/datanode
+
+namenode_ip: "{{ hostvars[groups['namenode'][0]].ansible_host }}"
+secondary_ip: "{{ hostvars[groups['secondary'][0]].ansible_host }}"
+namenode_rpc_port: 8020
+namenode_http_port: 9870
+secondary_http_port: 9868
+hdfs_replication: 3
