@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
   <property>
+    <name>dfs.namenode.rpc-address</name>
+    <value>{{ namenode_ip }}:{{ namenode_rpc_port }}</value>
+  </property>
+  <property>
     <name>dfs.namenode.rpc-bind-host</name>
     <value>{{ namenode_ip }}</value>
   </property>

@@ -1,0 +1,53 @@
+---
+- name: Запуск трёх DataNode
+  hosts: datanodes
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Проверить процесс DataNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_java_home }}/bin/jps"
+          - -l
+      register: datanode_process
+      changed_when: false
+
+    - name: Запустить DataNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - --daemon
+          - start
+          - datanode
+        chdir: "{{ hadoop_home }}"
+      when: "'org.apache.hadoop.hdfs.server.datanode.DataNode' not in datanode_process.stdout"
+
+- name: Проверка регистрации DataNode
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Дождаться работающих DataNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - dfsadmin
+          - -report
+        chdir: "{{ hadoop_home }}"
+      register: datanode_report
+      until: "'Live datanodes (3):' in datanode_report.stdout"
+      retries: 24
+      delay: 5
+      changed_when: false
+
+    - name: Отчёт HDFS
+      ansible.builtin.debug:
+        var: datanode_report.stdout_lines
