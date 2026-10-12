@@ -1,10 +1,10 @@
 # Ручное развертывание YARN поверх HDFS
 
-Руководство описывает ручную настройку YARN на уже работающем кластере HDFS из `hw1`. Предполагается, что HDFS был установлен Ansible-автоматизацией и продолжает работать. Здесь настраиваются только YARN и MapReduce; HDFS повторно не форматируется и его текущие конфигурация и каталоги данных не заменяются.
+Ручная настройка YARN на уже работающем кластере HDFS из `hw1`. Основываемся на том, что HDFS был установлен Ansible автоматизацией из hw1. Здесь настраиваются только YARN и MapReduce
 
 ## 0. Исходное состояние и целевая архитектура
 
-В кластере четыре VM. Из интернета доступна edge-нода `2.59.80.26`; внутренние узлы доступны через неё. Hadoop 3.4.0 и Java 11 уже установлены Ansible на трёх узлах HDFS. Hadoop расположен в `/opt/hadoop-3.4.0`, системный пользователь демонов — `hdfs` (группа `hadoop`). У пользователя `hdfs` shell `nologin`, поэтому команды демонов запускаются через `sudo -u hdfs`, а не SSH-входом под `hdfs`.
+В кластере четыре VM. Из интернета доступна edge-нода `2.59.80.26`, внутренние узлы доступны через неё. Hadoop 3.4.0 и Java 11 уже установлены Ansible на трёх узлах HDFS. Hadoop расположен в `/opt/hadoop-3.4.0`, системный пользователь демонов — `hdfs` (группа `hadoop`). У пользователя `hdfs` shell `nologin`, поэтому команды демонов запускаются через `sudo -u hdfs`, а не SSH-входом под `hdfs`, в отличие от семинара.
 
 | Узел | Приватный IP | Уже работающие HDFS-службы | Добавляемые службы |
 |---|---:|---|---|
@@ -13,7 +13,7 @@
 | `team-35-00` | `10.35.0.12` | SecondaryNameNode, DataNode | NodeManager |
 | `team-35-01` | `10.35.0.13` | DataNode | NodeManager |
 
-В результате ResourceManager и JobHistoryServer работают на NameNode, а три NodeManager — на трёх узлах, где уже установлен Hadoop. Edge остаётся узлом управления и не становится YARN-worker-нодой.
+В результате ResourceManager и JobHistoryServer работают на NameNode, а три NodeManager — на трех узлах, где уже установлен Hadoop
 
 | Служба | Адрес/порт по умолчанию |
 |---|---|
@@ -22,7 +22,7 @@
 | JobHistoryServer web UI | `10.35.0.11:19888` |
 | NodeManager web UI | каждый worker, порт `8042` |
 
-Все действия с файлами конфигурации выполняются от `team` через `sudo`; сами Hadoop/YARN-команды запускаются от пользователя `hdfs` с окружением, установленным Ansible.
+Все действия с файлами конфигурации выполняются от `team` через `sudo`. Сами Hadoop/YARN-команды запускаются от пользователя `hdfs` с окружением, установленным Ansible.
 
 ---
 
@@ -42,7 +42,7 @@ sudo -u hdfs /opt/hadoop-3.4.0/bin/hdfs dfsadmin -report
 exit
 ```
 
-В отчёте должно быть `Live datanodes (3)`. Если HDFS не работает, сначала восстановите его состояние по инструкции `hw1/docs/manual-installation.md`.
+В отчёте должно быть `Live datanodes (3)`. Если HDFS не работает, сначала восстановите его состояние с помощью `hw1`
 
 Убедитесь также, что Hadoop и Java доступны на всех трёх узлах:
 
@@ -58,7 +58,9 @@ sudo grep -E '^export (JAVA_HOME|HADOOP_HOME|HADOOP_CONF_DIR|PATH)=' \
   /opt/hadoop-3.4.0/etc/hadoop/hadoop-env.sh
 ```
 
-В файле должны быть заданы `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64`, `HADOOP_HOME=/opt/hadoop-3.4.0` и `HADOOP_CONF_DIR=/opt/hadoop-3.4.0/etc/hadoop`. При ручном запуске команд используйте `sudo -u hdfs` и полный путь к исполняемому файлу Hadoop/YARN.
+В файле должны быть заданы `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64`, `HADOOP_HOME=/opt/hadoop-3.4.0` и `HADOOP_CONF_DIR=/opt/hadoop-3.4.0/etc/hadoop`. 
+
+**Замечание:** Переменные прописаны не в `.bashrc`, при ручном запуске команд используйте `sudo -u hdfs` и полный путь к исполняемому файлу Hadoop/YARN.
 
 ---
 
@@ -116,7 +118,7 @@ sudo nano /opt/hadoop-3.4.0/etc/hadoop/mapred-site.xml
 </configuration>
 ```
 
-`mapreduce.framework.name=yarn` направляет MapReduce-приложения в YARN. JobHistoryServer использует RPC-порт `10020` и web-порт `19888`. Каталоги `/mr-history/tmp` и `/mr-history/done` — пути в HDFS, где сохраняются промежуточные и завершённые сведения о заданиях.
+`mapreduce.framework.name=yarn` направляет MapReduce-приложения в YARN. JobHistoryServer использует RPC-порт `10020` и web-порт `19888`. Каталоги `/mr-history/tmp` и `/mr-history/done` — пути в HDFS, где сохраняются промежуточные и завершенные сведения о заданиях.
 
 ---
 
@@ -171,13 +173,11 @@ sudo chown hdfs:hadoop \
 
 ResourceManager располагается на `team-35-nn`; NodeManager на каждой из трёх VM регистрируется по указанному адресу `10.35.0.11`. Служба `mapreduce_shuffle` необходима для передачи промежуточных результатов MapReduce между map- и reduce-контейнерами.
 
-Если VM имеют ограниченную память, проверьте её объём командой `free -h`. При необходимости задайте `yarn.nodemanager.resource.memory-mb` в этом XML. Поскольку конфигурация общая, выбранное значение должно подходить самой малоресурсной worker-ноде; не выделяйте контейнерам всю RAM, занятую ОС и демонами Hadoop.
-
 ---
 
 ## Шаг 5. Распространить YARN-конфигурацию на узлы
 
-Клиентские и daemon-конфигурации должны быть одинаковыми на `nn`, `dn0` и `dn1`. Передайте два новых XML-файла с NameNode на остальные узлы через edge. Команды выполняются **на edge под `team`**; SSH-ключ `~/.ssh/team_internal` уже используется для доступа edge к внутренним узлам:
+Клиентские и daemon-конфигурации должны быть одинаковыми на `nn`, `dn0` и `dn1`. Передайте два новых XML-файла с NameNode на остальные узлы через edge. Команды выполняются **на edge под `team`**. SSH-ключ `~/.ssh/team_internal` уже используется для доступа edge к внутренним узлам:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-nn \
@@ -191,7 +191,7 @@ ssh -i ~/.ssh/team_internal team@team-35-nn \
   'sudo tar -C /opt/hadoop-3.4.0 -xpf - && sudo chown hdfs:hadoop /opt/hadoop-3.4.0/etc/hadoop/mapred-site.xml /opt/hadoop-3.4.0/etc/hadoop/yarn-site.xml'
 ```
 
-Файлы `core-site.xml` и `hdfs-site.xml` от HDFS не заменяйте: они уже настроены для работающего кластера. Проверьте наличие новых файлов на каждом узле.
+Файлы `core-site.xml` и `hdfs-site.xml` от HDFS не заменяйте: они уже настроены для работающего кластера.
 
 ---
 
@@ -245,7 +245,9 @@ sudo -u hdfs /usr/lib/jvm/java-11-openjdk-amd64/bin/jps
 sudo -u hdfs /opt/hadoop-3.4.0/bin/mapred --daemon start historyserver
 ```
 
-На NameNode ожидаются процессы `NameNode`, `DataNode`, `ResourceManager`, `NodeManager` и `JobHistoryServer`. На `team-35-00` ожидаются `SecondaryNameNode`, `DataNode` и `NodeManager`; на `team-35-01` — `DataNode` и `NodeManager`.
+На NameNode ожидаются процессы `NameNode`, `DataNode`, `ResourceManager`, `NodeManager` и `JobHistoryServer`.
+- На `team-35-00` ожидаются `SecondaryNameNode`, `DataNode` и `NodeManager`
+- На `team-35-01` ожидаются `DataNode` и `NodeManager`.
 
 ---
 
@@ -311,7 +313,7 @@ ssh -N \
 | NodeManager `team-35-00` | `http://localhost:18043` |
 | NodeManager `team-35-01` | `http://localhost:18044` |
 
-Порты `8088`, `19888`, `18042`, `18043` и `18044` на локальном компьютере должны быть свободны. SSH-туннель даёт доступ для проверки с ноутбука; он не публикует интерфейсы в интернете.
+Порты `8088`, `19888`, `18042`, `18043` и `18044` на локальном компьютере должны быть свободны.
 
 ---
 
