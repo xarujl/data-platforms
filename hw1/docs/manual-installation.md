@@ -6,13 +6,13 @@
 
 | VM | Имя DNS/hostname | Приватный IP | Планируемые службы |
 |---|---|---|---|
-| Edge | `team-35-en` | `10.35.0.10` | **DataNode №3**, **SecondaryNameNode**, клиентские команды HDFS |
-| NameNode | `team-35-nn` | `10.35.0.11` | **NameNode** |
-| DataNode №1 | `team-35-00` | `10.35.0.12` | **DataNode №1** |
-| DataNode №2 | `team-35-01` | `10.35.0.13` | **DataNode №2** |
+| Edge | `team-35-en` | `10.35.0.10` | Клиентские команды HDFS |
+| NameNode | `team-35-nn` | `10.35.0.11` | **NameNode**, **DataNode №1** |
+| DataNode №2 | `team-35-00` | `10.35.0.12` | **SecondaryNameNode**, **DataNode №2** |
+| DataNode №3 | `team-35-01` | `10.35.0.13` | **DataNode №3** |
 
 По условию задания требуется развернуть hdfs, включающего в себя 3 DataNode и обязательные для функционирования кластера сервисы: NameNode, Secondary NameNode.
-Имеется всего четыре VM, а нужны один отдельный NameNode и три DataNode. Поэтому один DataNode совмещаем с edge. SecondaryNameNode разместим там же.
+Имеется всего четыре VM: edge используем для клиентских команд и управления, а службы HDFS размещаем на остальных трёх узлах. NameNode совмещаем с DataNode на `team-35-nn`, SecondaryNameNode — с DataNode на `team-35-00`.
 
 **Роли:** 
 - NameNode хранит метаданные и расположение блоков
@@ -49,7 +49,7 @@ exit
 
 `exit` возвращает на edge.
 
-### 0.3. DataNode №1
+### 0.3. DataNode №2
 
 На **edge**:
 
@@ -60,7 +60,7 @@ sudo apt upgrade
 exit
 ```
 
-### 0.4. DataNode №2
+### 0.4. DataNode №3
 
 На **edge**:
 
@@ -95,7 +95,7 @@ sudo adduser hadoop
 exit
 ```
 
-### 1.3. DataNode №1
+### 1.3. DataNode №2
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
@@ -103,7 +103,7 @@ sudo adduser hadoop
 exit
 ```
 
-### 1.4. DataNode №2
+### 1.4. DataNode №3
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -142,7 +142,7 @@ sudo tar -C /home/hadoop -cf - .ssh | \
   'sudo tar -C /home/hadoop -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/.ssh'
 ```
 
-### 2.3. Скопировать `.ssh` на DataNode №1
+### 2.3. Скопировать `.ssh` на DataNode №2
 
 ```bash
 sudo tar -C /home/hadoop -cf - .ssh | \
@@ -150,7 +150,7 @@ sudo tar -C /home/hadoop -cf - .ssh | \
   'sudo tar -C /home/hadoop -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/.ssh'
 ```
 
-### 2.4. Скопировать `.ssh` на DataNode №2
+### 2.4. Скопировать `.ssh` на DataNode №3
 
 ```bash
 sudo tar -C /home/hadoop -cf - .ssh | \
@@ -200,7 +200,7 @@ java -version
 exit
 ```
 
-На DataNode №1:
+На DataNode №2:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
@@ -210,7 +210,7 @@ java -version
 exit
 ```
 
-На DataNode №2:
+На DataNode №3:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -259,7 +259,7 @@ sudo tar -C /home/hadoop -cf - hadoop-3.4.0 | \
   'sudo tar -C /home/hadoop -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/hadoop-3.4.0'
 ```
 
-### DataNode №1
+### DataNode №2
 
 ```bash
 sudo tar -C /home/hadoop -cf - hadoop-3.4.0 | \
@@ -267,7 +267,7 @@ sudo tar -C /home/hadoop -cf - hadoop-3.4.0 | \
   'sudo tar -C /home/hadoop -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/hadoop-3.4.0'
 ```
 
-### DataNode №2
+### DataNode №3
 
 ```bash
 sudo tar -C /home/hadoop -cf - hadoop-3.4.0 | \
@@ -323,7 +323,7 @@ exit
 exit
 ```
 
-### 6.3. DataNode №1
+### 6.3. DataNode №2
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
@@ -340,7 +340,7 @@ exit
 exit
 ```
 
-### 6.4. DataNode №2
+### 6.4. DataNode №3
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -363,34 +363,31 @@ exit
 
 Это **обычные локальные директории Linux**, не HDFS-пути. NameNode хранит там метаданные, DataNode — блоки.
 
-### 7.1. На NameNode
+### 7.1. На NameNode и DataNode №1
 
 На edge под `team`:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-nn
 sudo install -d -m 700 -o hadoop -g hadoop /home/hadoop/hdfs/namenode
+sudo install -d -m 700 -o hadoop -g hadoop /home/hadoop/hdfs/datanode
 ls -ld /home/hadoop/hdfs/namenode
+ls -ld /home/hadoop/hdfs/datanode
 exit
 ```
 
-### 7.2. На каждом DataNode (включая edge)
+### 7.2. На DataNode №2 и SecondaryNameNode
 
-Edge:
-
-```bash
-sudo install -d -m 700 -o hadoop -g hadoop /home/hadoop/hdfs/datanode
-```
-
-DataNode №1:
+На `team-35-00` создаём каталоги DataNode и контрольных точек SecondaryNameNode:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
 sudo install -d -m 700 -o hadoop -g hadoop /home/hadoop/hdfs/datanode
+sudo install -d -m 700 -o hadoop -g hadoop /home/hadoop/hdfs/secondary
 exit
 ```
 
-DataNode №2:
+### 7.3. На DataNode №3
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -459,6 +456,14 @@ nano hdfs-site.xml
     <value>3</value>
   </property>
   <property>
+    <name>dfs.namenode.rpc-address</name>
+    <value>10.35.0.11:8020</value>
+  </property>
+  <property>
+    <name>dfs.namenode.rpc-bind-host</name>
+    <value>10.35.0.11</value>
+  </property>
+  <property>
     <name>dfs.namenode.name.dir</name>
     <value>file:///home/hadoop/hdfs/namenode</value>
   </property>
@@ -467,16 +472,29 @@ nano hdfs-site.xml
     <value>file:///home/hadoop/hdfs/datanode</value>
   </property>
   <property>
+    <name>dfs.namenode.checkpoint.dir</name>
+    <value>file:///home/hadoop/hdfs/secondary</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-address</name>
+    <value>10.35.0.11:9870</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+  <property>
     <name>dfs.namenode.secondary.http-address</name>
-    <value>team-35-en:9868</value>
+    <value>0.0.0.0:9868</value>
   </property>
 </configuration>
 ```
 
 - `dfs.replication=3` создаёт три реплики новых файлов при наличии трёх исправных DataNode.
 - `dfs.namenode.name.dir` фактически использует только NameNode.
-- `dfs.datanode.data.dir` используется тремя DataNode.
-- `dfs.namenode.secondary.http-address` задаёт адрес веб-интерфейса SecondaryNameNode. Для нашего кластера дополнительно разместим его на edge.
+- `dfs.datanode.data.dir` используется тремя DataNode, в том числе DataNode на NameNode.
+- `dfs.namenode.checkpoint.dir` используется SecondaryNameNode на `team-35-00`.
+- `dfs.namenode.secondary.http-address` задаёт порт веб-интерфейса SecondaryNameNode; `0.0.0.0` позволяет слушать его на интерфейсах узла `team-35-00`.
 
 ### 8.4. `workers`
 
@@ -487,12 +505,12 @@ nano workers
 Заменить содержимое:
 
 ```text
-team-35-en
+team-35-nn
 team-35-00
 team-35-01
 ```
 
-В файле **три DataNode**, а `team-35-nn` здесь отсутствует. Файл `workers` используется shell-скриптами вроде `start-dfs.sh` для запуска процессов по SSH.
+В файле перечислены все три DataNode. NameNode `team-35-nn` включён в список, потому что на нём также работает DataNode. Файл `workers` используется shell-скриптами вроде `start-dfs.sh` для запуска процессов по SSH.
 
 ---
 
@@ -508,7 +526,7 @@ sudo tar -C /home/hadoop/hadoop-3.4.0 -cf - etc/hadoop | \
   'sudo tar -C /home/hadoop/hadoop-3.4.0 -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/hadoop-3.4.0/etc/hadoop'
 ```
 
-### 9.2. DataNode №1
+### 9.2. DataNode №2 и SecondaryNameNode
 
 ```bash
 sudo tar -C /home/hadoop/hadoop-3.4.0 -cf - etc/hadoop | \
@@ -516,7 +534,7 @@ sudo tar -C /home/hadoop/hadoop-3.4.0 -cf - etc/hadoop | \
   'sudo tar -C /home/hadoop/hadoop-3.4.0 -xpf - && sudo chown -R hadoop:hadoop /home/hadoop/hadoop-3.4.0/etc/hadoop'
 ```
 
-### 9.3. DataNode №2
+### 9.3. DataNode №3
 
 ```bash
 sudo tar -C /home/hadoop/hadoop-3.4.0 -cf - etc/hadoop | \
@@ -545,9 +563,9 @@ exit
 
 ## Шаг 11. Запустить HDFS и SecondaryNameNode
 
-Чтобы исключить разночтения с расположением SecondaryNameNode, запустим службы **вручную на нужных VM**. Это показывает, где реально работают демоны, и не зависит от автоматического выбора SecondaryNameNode скриптом.
+Чтобы явно видеть размещение демонов, запустим службы **вручную на нужных VM**. Это не зависит от автоматического выбора SecondaryNameNode скриптом.
 
-### 11.1. NameNode (только `team-35-nn`)
+### 11.1. NameNode и DataNode №1 на `team-35-nn`
 
 На edge:
 
@@ -556,24 +574,15 @@ ssh -i ~/.ssh/team_internal team@team-35-nn
 sudo -iu hadoop
 source ~/.bashrc
 hdfs --daemon start namenode
-jps
-exit
-exit
-```
-
-Ожидается Java-процесс `NameNode`.
-
-### 11.2. DataNode №3 на edge
-
-```bash
-sudo -iu hadoop
-source ~/.bashrc
 hdfs --daemon start datanode
 jps
 exit
+exit
 ```
 
-### 11.3. DataNode №1
+Ожидаются Java-процессы `NameNode` и `DataNode`.
+
+### 11.2. DataNode №2 на `team-35-00`
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
@@ -585,7 +594,7 @@ exit
 exit
 ```
 
-### 11.4. DataNode №2
+### 11.3. DataNode №3 на `team-35-01`
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -597,22 +606,25 @@ exit
 exit
 ```
 
-### 11.5. SecondaryNameNode на edge
+### 11.4. SecondaryNameNode на `team-35-00`
 
 ```bash
+ssh -i ~/.ssh/team_internal team@team-35-00
 sudo -iu hadoop
 source ~/.bashrc
 hdfs --daemon start secondarynamenode
 jps
 exit
+exit
 ```
 
-- на edge ожидаются **DataNode** и **SecondaryNameNode**
-- на `team-35-nn` — **NameNode**
-- на каждом из `team-35-00` и `team-35-01` — **DataNode**
+- на edge Hadoop-демоны не запускаются;
+- на `team-35-nn` ожидаются **NameNode** и **DataNode**;
+- на `team-35-00` — **SecondaryNameNode** и **DataNode**;
+- на `team-35-01` — **DataNode**.
 - `jps` может показывать также сам `Jps`.
 
-**Примечание про `start-dfs.sh`:** он запускает NameNode на текущем узле, DataNode — на узлах из `workers` по SSH, а SecondaryNameNode — на узлах, которые определяет конфигурация. После проверки конфигурации можно запускать его с NameNode под `hadoop`, но приведённый поузловой способ прозрачнее.
+**Примечание про `start-dfs.sh`:** он запускает NameNode на текущем узле, DataNode — на узлах из `workers` по SSH, а адрес SecondaryNameNode определяет по конфигурации. Здесь адрес UI SecondaryNameNode задан через `0.0.0.0`, поэтому для однозначного размещения демона используйте приведённый поузловой запуск на `team-35-00`.
 
 ---
 
@@ -656,7 +668,7 @@ hdfs fsck /user/hadoop/hdfs-test.txt -files -blocks -locations
 
 ### 12.3. Веб-интерфейсы
 
-По умолчанию NameNode HTTP UI: `http://team-35-nn:9870`, SecondaryNameNode: `http://team-35-en:9868`.
+NameNode HTTP UI: `http://team-35-nn:9870`, SecondaryNameNode UI: `http://team-35-00:9868`.
 
 Для доступа к **NameNode UI** с ноутбука используйте туннель (запускать со своего ноута, не VM):
 
@@ -669,7 +681,7 @@ ssh -N -L 9870:10.35.0.11:9870 team@2.59.80.26
 Для SecondaryNameNode UI (другой терминал ноутбука):
 
 ```bash
-ssh -N -L 9868:10.35.0.10:9868 team@2.59.80.26
+ssh -N -L 9868:10.35.0.12:9868 team@2.59.80.26
 ```
 
 Откройте `http://localhost:9868`.
@@ -684,28 +696,19 @@ exit
 
 Останавливать удобно сначала SecondaryNameNode, потом DataNode, затем NameNode. Все команды выполняются **под `hadoop`** на соответствующих хостах.
 
-На edge:
-
-```bash
-sudo -iu hadoop
-source ~/.bashrc
-hdfs --daemon stop secondarynamenode
-hdfs --daemon stop datanode
-exit
-```
-
-DataNode №1:
+На `team-35-00`:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-00
 sudo -iu hadoop
 source ~/.bashrc
+hdfs --daemon stop secondarynamenode
 hdfs --daemon stop datanode
 exit
 exit
 ```
 
-DataNode №2:
+DataNode №3 на `team-35-01`:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-01
@@ -716,12 +719,13 @@ exit
 exit
 ```
 
-NameNode:
+DataNode №1 на `team-35-nn`:
 
 ```bash
 ssh -i ~/.ssh/team_internal team@team-35-nn
 sudo -iu hadoop
 source ~/.bashrc
+hdfs --daemon stop datanode
 hdfs --daemon stop namenode
 exit
 exit
