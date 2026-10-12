@@ -3,4 +3,4 @@
 Как читать и запускать
 
 1. `docs/manual-installation.md` — подробный ручной способ и пояснения
-2. `ansible/README.md` — автоматизация с помощью Ansible
+2. `infra/README.md` — автоматизация с помощью Ansible
