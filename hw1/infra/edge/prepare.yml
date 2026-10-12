@@ -4,6 +4,7 @@
   connection: local
   gather_facts: false
   become: false
+  any_errors_fatal: true
   vars_files:
     - group_vars/all.yml
 
@@ -25,6 +26,7 @@
   hosts: hdfs
   gather_facts: false
   become: true
+  any_errors_fatal: true
 
   tasks:
     - name: Обновление пакетов
