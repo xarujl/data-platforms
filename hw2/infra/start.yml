@@ -1,0 +1,103 @@
+---
+- name: Запустить YARN-демоны на узлах по их ролям
+  hosts: hdfs_nodes
+  gather_facts: false
+  become: true
+  become_user: "{{ hadoop_daemon_user }}"
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Проверить уже работающие Java-процессы Hadoop
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_java_home }}/bin/jps"
+          - -l
+      register: java_processes
+      changed_when: false
+
+    - name: Запустить ResourceManager на NameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/yarn"
+          - --daemon
+          - start
+          - resourcemanager
+      when:
+        - "'namenode' in group_names"
+        - "'org.apache.hadoop.yarn.server.resourcemanager.ResourceManager' not in java_processes.stdout"
+
+    - name: Запустить NodeManager на workers
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/yarn"
+          - --daemon
+          - start
+          - nodemanager
+      when:
+        - "'workers' in group_names"
+        - "'org.apache.hadoop.yarn.server.nodemanager.NodeManager' not in java_processes.stdout"
+
+    - name: Запустить JobHistoryServer на NameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/mapred"
+          - --daemon
+          - start
+          - historyserver
+      when:
+        - "'namenode' in group_names"
+        - "'org.apache.hadoop.mapreduce.v2.hs.JobHistoryServer' not in java_processes.stdout"
+
+- name: Проверить доступность ResourceManager и JobHistoryServer
+  hosts: namenode
+  gather_facts: false
+  become: false
+  any_errors_fatal: true
+
+  tasks:
+    - name: Дождаться веб-интерфейса ResourceManager
+      ansible.builtin.wait_for:
+        host: "{{ namenode_ip }}"
+        port: "{{ yarn_resourcemanager_web_port }}"
+        timeout: 120
+
+    - name: Дождаться RPC-порта JobHistoryServer
+      ansible.builtin.wait_for:
+        host: "{{ namenode_ip }}"
+        port: "{{ mapreduce_jobhistory_rpc_port }}"
+        timeout: 120
+
+    - name: Дождаться веб-интерфейса JobHistoryServer
+      ansible.builtin.wait_for:
+        host: "{{ namenode_ip }}"
+        port: "{{ mapreduce_jobhistory_web_port }}"
+        timeout: 120
+
+- name: Дождаться регистрации трёх NodeManager
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: "{{ hadoop_daemon_user }}"
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Получить список зарегистрированных NodeManager
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/yarn"
+          - node
+          - -list
+          - -all
+      register: yarn_nodes
+      until:
+        - "'TotalNodes:3' in yarn_nodes.stdout | regex_replace('\\s+', '')"
+        - "(yarn_nodes.stdout | regex_findall('RUNNING') | length) == 3"
+      retries: 24
+      delay: 5
+      changed_when: false
+
+    - name: Показать результат проверки NodeManager
+      ansible.builtin.debug:
+        var: yarn_nodes.stdout_lines

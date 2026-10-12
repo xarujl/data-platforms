@@ -1,0 +1,116 @@
+---
+- name: Создать локальные каталоги и разложить конфигурацию YARN/MapReduce
+  hosts: hdfs_nodes
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Создать локальные каталоги NodeManager
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ hadoop_daemon_user }}"
+        group: "{{ hadoop_daemon_group }}"
+        mode: "0750"
+      loop:
+        - "{{ yarn_local_dir }}"
+        - "{{ yarn_log_dir }}"
+
+    - name: Установить конфигурацию MapReduce
+      ansible.builtin.template:
+        src: mapred-site.xml.j2
+        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
+        owner: "{{ hadoop_daemon_user }}"
+        group: "{{ hadoop_daemon_group }}"
+        mode: "0644"
+      notify:
+        - Restart NodeManager
+        - Restart ResourceManager
+        - Restart JobHistoryServer
+
+    - name: Установить конфигурацию YARN
+      ansible.builtin.template:
+        src: yarn-site.xml.j2
+        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
+        owner: "{{ hadoop_daemon_user }}"
+        group: "{{ hadoop_daemon_group }}"
+        mode: "0644"
+      notify:
+        - Restart NodeManager
+        - Restart ResourceManager
+        - Restart JobHistoryServer
+
+    - name: Применить изменённую конфигурацию до проверки и запуска
+      ansible.builtin.meta: flush_handlers
+
+  handlers:
+    - name: Restart NodeManager
+      ansible.builtin.shell:
+        cmd: >-
+          if {{ hadoop_java_home }}/bin/jps -l | grep -Fq
+          org.apache.hadoop.yarn.server.nodemanager.NodeManager; then
+            {{ hadoop_home }}/bin/yarn --daemon stop nodemanager || true;
+            {{ hadoop_home }}/bin/yarn --daemon start nodemanager;
+          fi
+        executable: /bin/bash
+      become_user: "{{ hadoop_daemon_user }}"
+      environment: "{{ hadoop_environment }}"
+      when: "'workers' in group_names"
+
+    - name: Restart ResourceManager
+      ansible.builtin.shell:
+        cmd: >-
+          if {{ hadoop_java_home }}/bin/jps -l | grep -Fq
+          org.apache.hadoop.yarn.server.resourcemanager.ResourceManager; then
+            {{ hadoop_home }}/bin/yarn --daemon stop resourcemanager || true;
+            {{ hadoop_home }}/bin/yarn --daemon start resourcemanager;
+          fi
+        executable: /bin/bash
+      become_user: "{{ hadoop_daemon_user }}"
+      environment: "{{ hadoop_environment }}"
+      when: "'namenode' in group_names"
+
+    - name: Restart JobHistoryServer
+      ansible.builtin.shell:
+        cmd: >-
+          if {{ hadoop_java_home }}/bin/jps -l | grep -Fq
+          org.apache.hadoop.mapreduce.v2.hs.JobHistoryServer; then
+            {{ hadoop_home }}/bin/mapred --daemon stop historyserver || true;
+            {{ hadoop_home }}/bin/mapred --daemon start historyserver;
+          fi
+        executable: /bin/bash
+      become_user: "{{ hadoop_daemon_user }}"
+      environment: "{{ hadoop_environment }}"
+      when: "'namenode' in group_names"
+
+- name: Создать HDFS-каталоги истории JobHistoryServer
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: "{{ hadoop_daemon_user }}"
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Создать временный и завершённый каталоги истории
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - dfs
+          - -mkdir
+          - -p
+          - "{{ mapreduce_history_tmp_dir }}"
+          - "{{ mapreduce_history_done_dir }}"
+      changed_when: false
+
+    - name: Назначить владельца HDFS-каталогам истории
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - dfs
+          - -chown
+          - -R
+          - "{{ hadoop_daemon_user }}:{{ hadoop_daemon_group }}"
+          - /mr-history
+      changed_when: false

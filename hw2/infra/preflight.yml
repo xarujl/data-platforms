@@ -1,0 +1,77 @@
+---
+- name: Проверить готовность существующего HDFS и узлов Hadoop
+  hosts: hdfs_nodes
+  gather_facts: true
+  become: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Проверить системного пользователя демонов
+      ansible.builtin.command:
+        argv:
+          - id
+          - -u
+          - "{{ hadoop_daemon_user }}"
+      changed_when: false
+
+    - name: Проверить группу Hadoop
+      ansible.builtin.command:
+        argv:
+          - getent
+          - group
+          - "{{ hadoop_daemon_group }}"
+      changed_when: false
+
+    - name: Проверить Hadoop и Java
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ hadoop_home }}/bin/hdfs"
+        - "{{ hadoop_home }}/bin/yarn"
+        - "{{ hadoop_home }}/bin/mapred"
+        - "{{ hadoop_java_home }}/bin/java"
+        - "{{ hadoop_conf_dir }}/hadoop-env.sh"
+      register: hadoop_prerequisites
+
+    - name: Убедиться, что Hadoop и Java установлены
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.isreg
+        fail_msg: "Не найден обязательный файл {{ item.item }} на {{ inventory_hostname }}. Сначала разверните HDFS через hw1."
+      loop: "{{ hadoop_prerequisites.results }}"
+
+    - name: Проверить параметры окружения в hadoop-env.sh
+      ansible.builtin.shell:
+        cmd: >-
+          set -a && . {{ hadoop_conf_dir }}/hadoop-env.sh &&
+          test "$JAVA_HOME" = "{{ hadoop_java_home }}" &&
+          test "$HADOOP_HOME" = "{{ hadoop_home }}" &&
+          test "$HADOOP_CONF_DIR" = "{{ hadoop_conf_dir }}"
+        executable: /bin/bash
+      changed_when: false
+
+- name: Убедиться, что исходный HDFS доступен и имеет три DataNode
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: "{{ hadoop_daemon_user }}"
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Получить отчёт HDFS
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - dfsadmin
+          - -report
+      register: hdfs_report
+      changed_when: false
+
+    - name: Проверить число живых DataNode
+      ansible.builtin.assert:
+        that:
+          - "'Live datanodes (3):' in hdfs_report.stdout"
+        fail_msg: "Ожидались три живых DataNode. Сначала восстановите HDFS через hw1."
+        success_msg: "HDFS доступен; зарегистрированы три DataNode."
