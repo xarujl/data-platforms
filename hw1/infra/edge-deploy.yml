@@ -5,6 +5,13 @@
     - edge/group_vars/all.yml
 
   tasks:
+    - name: Обновление пакетов
+      become: true
+      ansible.builtin.apt:
+        upgrade: safe
+        update_cache: true
+        cache_valid_time: 3600
+
     - name: Установка Ansible
       become: true
       ansible.builtin.apt:
@@ -12,7 +19,6 @@
           - ansible-core
           - ca-certificates
         state: present
-        update_cache: true
 
     - name: Создание директории проекта
       ansible.builtin.file:

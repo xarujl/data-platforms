@@ -9,6 +9,12 @@ edge_cache_dir: "{{ playbook_dir }}/.cache"
 hadoop_java_home: /usr/lib/jvm/java-11-openjdk-amd64
 hadoop_home: "/opt/hadoop-{{ hadoop_version }}"
 hadoop_conf_dir: "{{ hadoop_home }}/etc/hadoop"
+hadoop_environment:
+  JAVA_HOME: "{{ hadoop_java_home }}"
+  HADOOP_HOME: "{{ hadoop_home }}"
+  HADOOP_CONF_DIR: "{{ hadoop_conf_dir }}"
+  PATH: "{{ hadoop_home }}/bin:{{ hadoop_home }}/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 hadoop_namenode_dir: /var/lib/hadoop/hdfs/namenode
 hadoop_secondary_dir: /var/lib/hadoop/hdfs/secondary
 hadoop_datanode_dir: /var/lib/hadoop/hdfs/datanode

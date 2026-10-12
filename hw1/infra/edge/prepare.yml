@@ -27,6 +27,12 @@
   become: true
 
   tasks:
+    - name: Обновление пакетов
+      ansible.builtin.apt:
+        upgrade: safe
+        update_cache: true
+        cache_valid_time: 3600
+
     - name: Java 11
       ansible.builtin.apt:
         name:
@@ -34,9 +40,8 @@
           - tar
           - gzip
           - ca-certificates
+          - acl
         state: present
-        update_cache: true
-        cache_valid_time: 3600
 
     - name: Группа для Hadoop
       ansible.builtin.group:
@@ -85,19 +90,23 @@
         owner: hdfs
         group: hadoop
 
-    - name: Настройка Java для Hadoop
+    - name: Настройка окружения Hadoop
       ansible.builtin.blockinfile:
         path: "{{ hadoop_conf_dir }}/hadoop-env.sh"
         block: |
           export JAVA_HOME={{ hadoop_java_home }}
+          export HADOOP_HOME={{ hadoop_home }}
+          export HADOOP_CONF_DIR={{ hadoop_conf_dir }}
+          export PATH="$PATH:$HADOOP_HOME/bin:$HADOOP_HOME/sbin"
 
     - name: Проверяем Hadoop
+      become_user: hdfs
       ansible.builtin.command:
         argv:
           - "{{ hadoop_home }}/bin/hadoop"
           - version
-      environment:
-        JAVA_HOME: "{{ hadoop_java_home }}"
+        chdir: "{{ hadoop_home }}"
+      environment: "{{ hadoop_environment }}"
       register: installed_hadoop
       changed_when: false
 
