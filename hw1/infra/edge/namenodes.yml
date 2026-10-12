@@ -1,0 +1,114 @@
+---
+- name: Общая конфигурация HDFS
+  hosts: hdfs
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Скопировать конфигурации на узлы
+      ansible.builtin.template:
+        src: "{{ item }}.j2"
+        dest: "{{ hadoop_conf_dir }}/{{ item }}"
+        owner: hdfs
+        group: hadoop
+        mode: "0644"
+      loop:
+        - core-site.xml
+        - hdfs-site.xml
+
+- name: Инициализация и запуск NameNode
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Проверить процесс NameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_java_home }}/bin/jps"
+          - -l
+      register: namenode_process
+      changed_when: false
+
+    - name: Проверить маркер инициализации NameNode
+      ansible.builtin.stat:
+        path: "{{ hadoop_namenode_dir }}/current/VERSION"
+      register: namenode_version
+
+    - name: Проверить содержимое нового каталога метаданных
+      ansible.builtin.find:
+        paths: "{{ hadoop_namenode_dir }}"
+        file_type: any
+        hidden: true
+        recurse: false
+      register: namenode_contents
+      when: not namenode_version.stat.exists
+
+    - name: Разрешить форматирование только пустого каталога
+      ansible.builtin.assert:
+        that:
+          - namenode_contents.matched == 0
+          - (namenode_contents.skipped_paths | default({})) | length == 0
+          - "'org.apache.hadoop.hdfs.server.namenode.NameNode' not in namenode_process.stdout"
+        fail_msg: "Каталог NameNode непуст или недоступен либо NameNode уже работает"
+      when: not namenode_version.stat.exists
+
+    - name: Отформатировать только новый NameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - namenode
+          - -format
+          - -nonInteractive
+        chdir: "{{ hadoop_home }}"
+        creates: "{{ hadoop_namenode_dir }}/current/VERSION"
+      when: not namenode_version.stat.exists
+
+    - name: Запустить NameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - --daemon
+          - start
+          - namenode
+        chdir: "{{ hadoop_home }}"
+      when: "'org.apache.hadoop.hdfs.server.namenode.NameNode' not in namenode_process.stdout"
+
+    - name: Дождаться RPC-порта NameNode с edge
+      ansible.builtin.wait_for:
+        host: "{{ namenode_ip }}"
+        port: "{{ namenode_rpc_port }}"
+        timeout: 120
+      delegate_to: localhost
+      become: false
+
+- name: Запуск SecondaryNameNode
+  hosts: secondary
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+
+  tasks:
+    - name: Проверить процесс SecondaryNameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_java_home }}/bin/jps"
+          - -l
+      register: secondary_process
+      changed_when: false
+
+    - name: Запустить SecondaryNameNode
+      ansible.builtin.command:
+        argv:
+          - "{{ hadoop_home }}/bin/hdfs"
+          - --daemon
+          - start
+          - secondarynamenode
+        chdir: "{{ hadoop_home }}"
+      when: "'org.apache.hadoop.hdfs.server.namenode.SecondaryNameNode' not in secondary_process.stdout"

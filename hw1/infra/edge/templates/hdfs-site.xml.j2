@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <property>
+    <name>dfs.namenode.rpc-bind-host</name>
+    <value>{{ namenode_ip }}</value>
+  </property>
+  <property>
+    <name>dfs.replication</name>
+    <value>{{ hdfs_replication }}</value>
+  </property>
+  <property>
+    <name>dfs.namenode.name.dir</name>
+    <value>file://{{ hadoop_namenode_dir }}</value>
+  </property>
+  <property>
+    <name>dfs.datanode.data.dir</name>
+    <value>file://{{ hadoop_datanode_dir }}</value>
+  </property>
+  <property>
+    <name>dfs.namenode.checkpoint.dir</name>
+    <value>file://{{ hadoop_secondary_dir }}</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-address</name>
+    <value>{{ namenode_ip }}:{{ namenode_http_port }}</value>
+  </property>
+  <property>
+    <name>dfs.namenode.http-bind-host</name>
+    <value>0.0.0.0</value>
+  </property>
+  <property>
+    <name>dfs.namenode.secondary.http-address</name>
+    <value>0.0.0.0:{{ secondary_http_port }}</value>
+  </property>
+</configuration>
