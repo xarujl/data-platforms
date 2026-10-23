@@ -1,0 +1,160 @@
+---
+- name: Проверка NodeManager
+  hosts: datanodes
+  gather_facts: false
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить HTTP API и здоровье NodeManager с edge
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[inventory_hostname].ansible_host }}:{{ yarn_nodemanager_web_port }}/ws/v1/node/info"
+        headers:
+          Accept: application/json
+        use_proxy: false
+      register: nodemanager_info
+      until: (nodemanager_info.json | default({})).get('nodeInfo', {}).get('nodeHealthy', false) | bool
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+      become: false
+
+- name: Проверка YARN и MapReduce
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Дождаться регистрации трёх работающих NodeManager
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/yarn", node, -list, -states, RUNNING]
+      register: yarn_nodes
+      until: "'Total Nodes:3' in yarn_nodes.stdout"
+      retries: 24
+      delay: 5
+      changed_when: false
+
+    - name: Создать временный каталог WordCount
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: hw2-wordcount.
+      register: wordcount_directory
+
+    - name: Проверка тестового задания
+      vars:
+        wordcount_hdfs_dir: "/user/hdfs/{{ wordcount_directory.path | basename }}"
+      block:
+        - name: Создать входные данные WordCount
+          ansible.builtin.copy:
+            dest: "{{ wordcount_directory.path }}/input.txt"
+            content: "one two two three three three\n"
+            mode: "0600"
+
+        - name: Создать отдельный входной каталог в HDFS
+          ansible.builtin.command:
+            argv: ["{{ hadoop_home }}/bin/hdfs", dfs, -mkdir, -p, "{{ wordcount_hdfs_dir }}/input"]
+
+        - name: Загрузить входные данные в HDFS
+          ansible.builtin.command:
+            argv:
+              - "{{ hadoop_home }}/bin/hdfs"
+              - dfs
+              - -put
+              - "{{ wordcount_directory.path }}/input.txt"
+              - "{{ wordcount_hdfs_dir }}/input/input.txt"
+
+        - name: Выполнить WordCount через YARN
+          ansible.builtin.command:
+            argv:
+              - timeout
+              - --signal=TERM
+              - --kill-after=10s
+              - "{{ yarn_smoke_timeout_seconds }}"
+              - "{{ hadoop_home }}/bin/hadoop"
+              - jar
+              - "{{ hadoop_home }}/share/hadoop/mapreduce/hadoop-mapreduce-examples-{{ hadoop_version }}.jar"
+              - wordcount
+              - "{{ wordcount_hdfs_dir }}/input"
+              - "{{ wordcount_hdfs_dir }}/output"
+            chdir: "{{ hadoop_home }}"
+          register: wordcount_result
+          failed_when: false
+
+        - name: Проверить успешное завершение WordCount
+          ansible.builtin.assert:
+            that:
+              - wordcount_result.rc == 0
+              - (wordcount_result.stdout ~ wordcount_result.stderr) | regex_findall('job_[0-9]+_[0-9]+') | length > 0
+            fail_msg: "WordCount завершился с ошибкой или таймаутом: {{ wordcount_result.stderr }}"
+
+        - name: Сохранить идентификатор тестового задания
+          ansible.builtin.set_fact:
+            wordcount_job_id: "{{ (wordcount_result.stdout ~ wordcount_result.stderr) | regex_findall('job_[0-9]+_[0-9]+') | last }}"
+
+        - name: Прочитать результат WordCount
+          ansible.builtin.command:
+            argv: ["{{ hadoop_home }}/bin/hdfs", dfs, -cat, "{{ wordcount_hdfs_dir }}/output/part-r-00000"]
+          register: wordcount_output
+          changed_when: false
+
+        - name: Сверить результат WordCount
+          ansible.builtin.assert:
+            that:
+              - wordcount_output.stdout_lines == ['one\t1', 'three\t3', 'two\t2']
+
+        - name: Проверить завершённое приложение в ResourceManager с edge
+          ansible.builtin.uri:
+            url: "http://{{ yarn_resourcemanager_ip }}:{{ yarn_resourcemanager_web_port }}/ws/v1/cluster/apps/{{ wordcount_job_id | replace('job_', 'application_') }}"
+            headers:
+              Accept: application/json
+            use_proxy: false
+          register: wordcount_application
+          until: >-
+            (wordcount_application.json | default({})).get('app', {}).get('state', '') == 'FINISHED'
+            and (wordcount_application.json | default({})).get('app', {}).get('finalStatus', '') == 'SUCCEEDED'
+          retries: 24
+          delay: 5
+          delegate_to: localhost
+          become: false
+
+        - name: Дождаться истории WordCount в JobHistoryServer с edge
+          ansible.builtin.uri:
+            url: "http://{{ yarn_resourcemanager_ip }}:{{ mapred_history_web_port }}/ws/v1/history/mapreduce/jobs/{{ wordcount_job_id }}"
+            headers:
+              Accept: application/json
+            status_code: [200, 404]
+            use_proxy: false
+          register: wordcount_history
+          until: (wordcount_history.json | default({})).get('job', {}).get('state', '') == 'SUCCEEDED'
+          retries: 24
+          delay: 5
+          delegate_to: localhost
+          become: false
+
+        - name: Результат проверки
+          ansible.builtin.debug:
+            msg:
+              - "Три NodeManager RUNNING; {{ wordcount_job_id }} SUCCEEDED и доступен в JobHistoryServer."
+              - "{{ wordcount_output.stdout_lines }}"
+
+      always:
+        - name: Остановить тестовое приложение после ошибки или таймаута
+          ansible.builtin.command:
+            argv: [timeout, 30, "{{ hadoop_home }}/bin/yarn", application, -kill, "{{ item }}"]
+          loop: "{{ ((wordcount_result.stdout | default('')) ~ (wordcount_result.stderr | default(''))) | regex_findall('application_[0-9]+_[0-9]+') | unique }}"
+          when: wordcount_result.rc | default(1) != 0
+
+        - name: Удалить только тестовые данные текущего запуска из HDFS
+          ansible.builtin.command:
+            argv: ["{{ hadoop_home }}/bin/hdfs", dfs, -rm, -r, -f, -skipTrash, "{{ wordcount_hdfs_dir }}"]
+
+        - name: Удалить временный локальный каталог
+          ansible.builtin.file:
+            path: "{{ wordcount_directory.path }}"
+            state: absent

@@ -1,0 +1,218 @@
+---
+- name: Проверка настроек ДЗ2
+  hosts: hdfs
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить состав кластера
+      run_once: true
+      ansible.builtin.assert:
+        that:
+          - groups['namenode'] | length == 1
+          - groups['datanodes'] | length == 3
+          - groups['namenode'][0] in groups['datanodes']
+        fail_msg: "Ожидаются один NameNode и три DataNode из ДЗ1, включая nn."
+
+    - name: Проверить согласованность лимитов контейнеров
+      ansible.builtin.assert:
+        that:
+          - mapred_container_heap_mb | int < mapred_container_memory_mb | int
+          - mapred_container_memory_mb | int <= yarn_node_memory_mb | int
+          - yarn_scheduler_minimum_mb | int <= mapred_container_memory_mb | int
+          - yarn_scheduler_maximum_mb | int >= mapred_container_memory_mb | int
+        fail_msg: "Лимиты контейнеров в group_vars/all.yml не согласованы."
+
+    - name: Проверка ресурсов VM по запросу
+      when: yarn_check_resources | bool
+      block:
+        - name: Получить объём памяти и число CPU
+          ansible.builtin.setup:
+            gather_subset:
+              - "!all"
+              - hardware
+
+        - name: Проверить соответствие лимитов ресурсам VM
+          ansible.builtin.assert:
+            that:
+              - yarn_node_memory_mb | int + 1024 <= ansible_facts.memtotal_mb
+              - yarn_node_vcores | int <= ansible_facts.processor_vcpus
+            fail_msg: "Лимиты в group_vars/all.yml не подходят ресурсам VM."
+
+- name: Исправление адреса локального имени узла
+  hosts: hdfs
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Получить короткое имя VM
+      ansible.builtin.command:
+        argv: [hostname, --short]
+      register: yarn_hostname
+      changed_when: false
+
+    - name: Заменить loopback у имён этой VM на адрес из inventory
+      ansible.builtin.replace:
+        path: /etc/hosts
+        regexp: '^(?P<indent>[ \t]*)127\.0\.1\.1(?P<aliases>(?:[ \t]+{{ yarn_hostname.stdout | regex_escape }}(?:\.[A-Za-z0-9_-]+)*)+[ \t]*(?:#.*)?)$'
+        replace: '\g<indent>{{ ansible_host }}\g<aliases>'
+        backup: true
+      register: yarn_hosts
+
+- name: Проверка готовности HDFS
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить три живых DataNode
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/hdfs", dfsadmin, -report]
+      register: hdfs_report
+      changed_when: false
+      failed_when: hdfs_report.rc != 0 or 'Live datanodes (3):' not in hdfs_report.stdout
+
+    - name: Проверить выход из safe mode
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/hdfs", dfsadmin, -safemode, get]
+      register: hdfs_safe_mode
+      changed_when: false
+      failed_when: hdfs_safe_mode.rc != 0 or 'Safe mode is OFF' not in hdfs_safe_mode.stdout
+
+- name: Настройка YARN и MapReduce
+  hosts: hdfs
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Создать локальные каталоги NodeManager
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: hdfs
+        group: hadoop
+        mode: "0750"
+      loop:
+        - "{{ yarn_local_dir }}"
+        - "{{ yarn_log_dir }}"
+
+    - name: Скопировать конфигурацию YARN
+      ansible.builtin.template:
+        src: yarn-site.xml.j2
+        dest: "{{ hadoop_conf_dir }}/yarn-site.xml"
+        owner: hdfs
+        group: hadoop
+        mode: "0644"
+      register: yarn_configuration
+
+    - name: Скопировать конфигурацию MapReduce
+      ansible.builtin.template:
+        src: mapred-site.xml.j2
+        dest: "{{ hadoop_conf_dir }}/mapred-site.xml"
+        owner: hdfs
+        group: hadoop
+        mode: "0644"
+      register: mapred_configuration
+
+    - name: Ограничить heap демонов YARN
+      ansible.builtin.blockinfile:
+        path: "{{ hadoop_conf_dir }}/yarn-env.sh"
+        marker: "# {mark} ANSIBLE HW2"
+        block: |
+          export YARN_RESOURCEMANAGER_HEAPSIZE={{ yarn_resourcemanager_heap_mb }}
+          export YARN_NODEMANAGER_HEAPSIZE={{ yarn_nodemanager_heap_mb }}
+      register: yarn_heap
+
+    - name: Ограничить heap JobHistoryServer
+      ansible.builtin.blockinfile:
+        path: "{{ hadoop_conf_dir }}/mapred-env.sh"
+        marker: "# {mark} ANSIBLE HW2"
+        block: |
+          export HADOOP_JOB_HISTORYSERVER_HEAPSIZE={{ mapred_history_heap_mb }}
+      register: mapred_heap
+
+- name: Каталоги истории в HDFS
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить каталоги истории
+      ansible.builtin.command:
+        argv:
+          [
+            "{{ hadoop_home }}/bin/hdfs",
+            dfs,
+            -stat,
+            "%u:%g:%a",
+            "{{ item.path }}",
+          ]
+      loop:
+        - { path: "{{ mapred_history_dir }}", mode: "755" }
+        - { path: "{{ mapred_history_dir }}/tmp", mode: "1777" }
+        - { path: "{{ mapred_history_dir }}/done", mode: "750" }
+      register: history_directories
+      changed_when: false
+      failed_when: false
+
+    - name: Создать отсутствующие каталоги истории
+      ansible.builtin.command:
+        argv:
+          [
+            "{{ hadoop_home }}/bin/hdfs",
+            dfs,
+            -mkdir,
+            -p,
+            "{{ item.item.path }}",
+          ]
+      loop: "{{ history_directories.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.rc != 0
+
+    - name: Назначить владельца каталогам истории
+      ansible.builtin.command:
+        argv:
+          [
+            "{{ hadoop_home }}/bin/hdfs",
+            dfs,
+            -chown,
+            "hdfs:hadoop",
+            "{{ item.item.path }}",
+          ]
+      loop: "{{ history_directories.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.stdout != 'hdfs:hadoop:' ~ item.item.mode
+
+    - name: Установить права каталогов истории
+      ansible.builtin.command:
+        argv:
+          [
+            "{{ hadoop_home }}/bin/hdfs",
+            dfs,
+            -chmod,
+            "{{ item.item.mode }}",
+            "{{ item.item.path }}",
+          ]
+      loop: "{{ history_directories.results }}"
+      loop_control:
+        label: "{{ item.item.path }}"
+      when: item.stdout != 'hdfs:hadoop:' ~ item.item.mode

@@ -1,0 +1,26 @@
+---
+yarn_edge_project_dir: /home/team/yarn-ansible
+
+# Адреса и пути Hadoop берутся из inventory и group_vars/all.yml ДЗ1.
+yarn_resourcemanager_ip: "{{ hostvars[groups['namenode'][0]].ansible_host }}"
+yarn_resourcemanager_web_port: 8088
+yarn_nodemanager_web_port: 8042
+mapred_history_rpc_port: 10020
+mapred_history_web_port: 19888
+
+yarn_local_dir: /var/lib/hadoop/yarn/local
+yarn_log_dir: /var/lib/hadoop/yarn/log
+mapred_history_dir: /mr-history
+
+# Учебные VM: 2 CPU, 4 ГиБ RAM. На nn оставляем больше памяти демонам.
+yarn_check_resources: false
+yarn_node_memory_mb: "{{ 1024 if inventory_hostname in groups['namenode'] else 2048 }}"
+yarn_node_vcores: 2
+yarn_scheduler_minimum_mb: 512
+yarn_scheduler_maximum_mb: 2048
+yarn_resourcemanager_heap_mb: 512
+yarn_nodemanager_heap_mb: 256
+mapred_history_heap_mb: 256
+mapred_container_memory_mb: 512
+mapred_container_heap_mb: 384
+yarn_smoke_timeout_seconds: 300

@@ -1,0 +1,118 @@
+---
+- name: Запуск ResourceManager
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить процесс ResourceManager
+      ansible.builtin.command:
+        argv: ["{{ hadoop_java_home }}/bin/jps", -l]
+      register: resourcemanager_process
+      changed_when: false
+
+    - name: Остановить ResourceManager при изменении настроек
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/yarn", --daemon, stop, resourcemanager]
+        chdir: "{{ hadoop_home }}"
+      when:
+        - "'org.apache.hadoop.yarn.server.resourcemanager.ResourceManager' in resourcemanager_process.stdout"
+        - yarn_configuration is changed or yarn_heap is changed or yarn_hosts is changed
+
+    - name: Запустить ResourceManager
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/yarn", --daemon, start, resourcemanager]
+        chdir: "{{ hadoop_home }}"
+      when: >-
+        'org.apache.hadoop.yarn.server.resourcemanager.ResourceManager' not in resourcemanager_process.stdout
+        or yarn_configuration is changed or yarn_heap is changed or yarn_hosts is changed
+
+    - name: Дождаться web-порта ResourceManager с edge
+      ansible.builtin.wait_for:
+        host: "{{ yarn_resourcemanager_ip }}"
+        port: "{{ yarn_resourcemanager_web_port }}"
+        timeout: 120
+      delegate_to: localhost
+      become: false
+
+- name: Запуск трёх NodeManager
+  hosts: datanodes
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить процесс NodeManager
+      ansible.builtin.command:
+        argv: ["{{ hadoop_java_home }}/bin/jps", -l]
+      register: nodemanager_process
+      changed_when: false
+
+    - name: Остановить NodeManager при изменении настроек
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/yarn", --daemon, stop, nodemanager]
+        chdir: "{{ hadoop_home }}"
+      when:
+        - "'org.apache.hadoop.yarn.server.nodemanager.NodeManager' in nodemanager_process.stdout"
+        - yarn_configuration is changed or yarn_heap is changed or yarn_hosts is changed
+
+    - name: Запустить NodeManager
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/yarn", --daemon, start, nodemanager]
+        chdir: "{{ hadoop_home }}"
+      when: >-
+        'org.apache.hadoop.yarn.server.nodemanager.NodeManager' not in nodemanager_process.stdout
+        or yarn_configuration is changed or yarn_heap is changed or yarn_hosts is changed
+
+- name: Запуск JobHistoryServer
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  environment: "{{ hadoop_environment }}"
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Проверить процесс JobHistoryServer
+      ansible.builtin.command:
+        argv: ["{{ hadoop_java_home }}/bin/jps", -l]
+      register: historyserver_process
+      changed_when: false
+
+    - name: Остановить JobHistoryServer при изменении настроек
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/mapred", --daemon, stop, historyserver]
+        chdir: "{{ hadoop_home }}"
+      when:
+        - "'org.apache.hadoop.mapreduce.v2.hs.JobHistoryServer' in historyserver_process.stdout"
+        - mapred_configuration is changed or mapred_heap is changed or yarn_hosts is changed
+
+    - name: Запустить JobHistoryServer
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/mapred", --daemon, start, historyserver]
+        chdir: "{{ hadoop_home }}"
+      when: >-
+        'org.apache.hadoop.mapreduce.v2.hs.JobHistoryServer' not in historyserver_process.stdout
+        or mapred_configuration is changed or mapred_heap is changed or yarn_hosts is changed
+
+    - name: Дождаться портов JobHistoryServer с edge
+      ansible.builtin.wait_for:
+        host: "{{ yarn_resourcemanager_ip }}"
+        port: "{{ item }}"
+        timeout: 120
+      loop:
+        - "{{ mapred_history_rpc_port }}"
+        - "{{ mapred_history_web_port }}"
+      delegate_to: localhost
+      become: false
