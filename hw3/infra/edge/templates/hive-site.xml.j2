@@ -28,6 +28,11 @@
     <name>hive.metastore.schema.verification</name>
     <value>true</value>
   </property>
+  <!-- Metastore доступен только локально, без настройки proxy-пользователей. -->
+  <property>
+    <name>hive.metastore.event.db.notification.api.auth</name>
+    <value>false</value>
+  </property>
   <property>
     <name>datanucleus.schema.autoCreateAll</name>
     <value>false</value>
