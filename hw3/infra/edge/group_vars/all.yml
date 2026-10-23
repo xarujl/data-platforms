@@ -1,0 +1,14 @@
+---
+hive_edge_project_dir: /home/team/hive-ansible
+hive_version: "4.0.1"
+hive_archive: "apache-hive-{{ hive_version }}-bin.tar.gz"
+hive_download_url: "https://archive.apache.org/dist/hive/hive-{{ hive_version }}/{{ hive_archive }}"
+hive_home: "/opt/apache-hive-{{ hive_version }}-bin"
+hive_base: /var/lib/hadoop/hive
+hive_java_home: /usr/lib/jvm/java-8-openjdk-amd64
+hive_metastore_heap_mb: 384
+hive_server_heap_mb: 512
+hive_client_heap_mb: 256
+hive_query_timeout_seconds: 600
+hive_database: hive_metastore
+hive_warehouse: /user/hive/warehouse

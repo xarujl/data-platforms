@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source {{ hive_base }}/env.sh
+cd {{ hive_base }}
+workdir=$(mktemp -d tmp/check-hive.XXXXXX)
+first=''
+second=''
+cleanup() {
+    local exit_code=$?
+    for pid in "$first" "$second"; do
+        if [[ -n "$pid" ]]; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    if [[ "$exit_code" == 0 ]]; then
+        rm -rf "$workdir"
+    else
+        printf 'Логи проверки сохранены: %s/%s\n' "$PWD" "$workdir" >&2
+    fi
+    return "$exit_code"
+}
+trap cleanup EXIT
+query='SELECT dt, COUNT(*), SUM(number) FROM colours GROUP BY dt ORDER BY dt;'
+# Два отдельных JDBC-клиента запускаются одновременно; агрегация использует MR.
+for client in client1 client2; do
+    timeout {{ hive_query_timeout_seconds }} beeline -u 'jdbc:hive2://127.0.0.1:10000/test' -n "$client" \
+        --force=false --silent=true --showHeader=false --outputformat=tsv2 \
+        -e "SET hive.fetch.task.conversion=none; $query" > "$workdir/$client.out" 2> "$workdir/$client.log" &
+    if [[ "$client" == client1 ]]; then first=$!; else second=$!; fi
+done
+status=0
+wait "$first" || status=1
+first=''
+wait "$second" || status=1
+second=''
+if [[ "$status" != 0 ]]; then
+    cat "$workdir/"*.log >&2
+    exit 1
+fi
+for client in client1 client2; do
+    if ! diff -u <(printf '2026-10-22\t3\t60\n2026-10-23\t3\t150\n') "$workdir/$client.out"; then
+        cat "$workdir/$client.log" >&2
+        exit 1
+    fi
+done
+printf 'Два JDBC-клиента: по две партиции, 6 строк, сумма 210.\n'

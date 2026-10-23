@@ -1,0 +1,162 @@
+---
+- name: Установка Hive и PostgreSQL на nn
+  hosts: namenode
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  vars_files:
+    - ../../../hw1/infra/edge/group_vars/all.yml
+
+  tasks:
+    - name: Установить зависимости ДЗ3
+      ansible.builtin.apt:
+        name:
+          - openjdk-8-jdk-headless
+          - postgresql
+          - postgresql-client
+          - libpostgresql-jdbc-java
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Запустить PostgreSQL
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: true
+        state: started
+
+    - name: Скачать Hive
+      ansible.builtin.get_url:
+        url: "{{ hive_download_url }}"
+        dest: "/opt/{{ hive_archive }}"
+        mode: "0644"
+        timeout: 120
+
+    - name: Распаковать Hive
+      ansible.builtin.unarchive:
+        src: "/opt/{{ hive_archive }}"
+        dest: /opt
+        remote_src: true
+        creates: "{{ hive_home }}/bin/hive"
+        owner: hdfs
+        group: hadoop
+
+    - name: Скопировать PostgreSQL JDBC-драйвер
+      ansible.builtin.copy:
+        src: /usr/share/java/postgresql.jar
+        dest: "{{ hive_home }}/lib/postgresql.jar"
+        remote_src: true
+        owner: hdfs
+        group: hadoop
+        mode: "0644"
+      register: hive_jdbc
+
+    - name: Создать рабочие каталоги Hive
+      ansible.builtin.file:
+        path: "{{ hive_base }}/{{ item }}"
+        state: directory
+        owner: hdfs
+        group: hadoop
+        mode: "0750"
+      loop: ['', data, logs, tmp, hadoop-conf]
+
+    - name: Сохранить пароль БД при первой установке
+      ansible.builtin.shell: |
+        umask 077
+        python3 -c 'import secrets; print(secrets.token_hex(24))' > {{ hive_base }}/postgres-password
+      args:
+        creates: "{{ hive_base }}/postgres-password"
+      no_log: true
+
+    - name: Прочитать пароль БД
+      ansible.builtin.command:
+        argv: [cat, "{{ hive_base }}/postgres-password"]
+      register: hive_password
+      changed_when: false
+      no_log: true
+
+    - name: Создать роль и БД метаданных
+      become_user: postgres
+      ansible.builtin.command:
+        argv: [psql, -X, -v, ON_ERROR_STOP=1, -d, postgres]
+        stdin: |
+          SELECT 'CREATE ROLE {{ hive_database }} LOGIN PASSWORD ''{{ hive_password.stdout | trim }}'''
+          WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{{ hive_database }}')
+          \gexec
+          SELECT 'CREATE DATABASE {{ hive_database }} OWNER {{ hive_database }} ENCODING ''UTF8'' TEMPLATE template0'
+          WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '{{ hive_database }}')
+          \gexec
+      register: hive_postgres
+      changed_when: "'CREATE ROLE' in hive_postgres.stdout or 'CREATE DATABASE' in hive_postgres.stdout"
+      no_log: true
+
+    - name: Скопировать настройку клиентских XML Hadoop
+      ansible.builtin.copy:
+        src: configure-hadoop.py
+        dest: "{{ hive_base }}/configure-hadoop.py"
+        owner: hdfs
+        group: hadoop
+        mode: "0640"
+
+    - name: Подготовить копии XML с Java 11 для контейнеров
+      become_user: hdfs
+      ansible.builtin.command:
+        argv:
+          - python3
+          - "{{ hive_base }}/configure-hadoop.py"
+          - "{{ hadoop_conf_dir }}"
+          - "{{ hive_base }}/hadoop-conf"
+          - "{{ hadoop_java_home }}"
+      register: hive_hadoop_config
+      changed_when: hive_hadoop_config.stdout == 'changed'
+
+    - name: Настроить окружение Hive
+      ansible.builtin.template:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: hdfs
+        group: hadoop
+        mode: "0640"
+      loop:
+        - { src: env.sh.j2, dest: "{{ hive_base }}/env.sh" }
+        - { src: hadoop-env.sh.j2, dest: "{{ hive_base }}/hadoop-conf/hadoop-env.sh" }
+      register: hive_environment
+
+    - name: Настроить Hive
+      ansible.builtin.template:
+        src: hive-site.xml.j2
+        dest: "{{ hive_home }}/conf/hive-site.xml"
+        owner: hdfs
+        group: hadoop
+        mode: "0600"
+      register: hive_configuration
+      no_log: true
+
+    - name: Создать каталоги Hive в HDFS
+      become_user: hdfs
+      environment: "{{ hadoop_environment }}"
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/hdfs", dfs, -mkdir, -p, /tmp, "{{ hive_warehouse }}", /input/colours]
+
+    - name: Установить права временного каталога HDFS
+      become_user: hdfs
+      environment: "{{ hadoop_environment }}"
+      ansible.builtin.command:
+        argv: ["{{ hadoop_home }}/bin/hdfs", dfs, -chmod, '1777', /tmp]
+
+    - name: Проверить наличие таблицы версии схемы
+      become_user: postgres
+      ansible.builtin.command:
+        argv: [psql, -X, -v, ON_ERROR_STOP=1, -d, "{{ hive_database }}", -tAc, "SELECT to_regclass('public.\"VERSION\"') IS NOT NULL"]
+      register: hive_schema
+      changed_when: false
+
+    - name: Инициализировать новую схему Metastore
+      become_user: hdfs
+      ansible.builtin.shell: |
+        source {{ hive_base }}/env.sh
+        exec {{ hive_home }}/bin/schematool -dbType postgres -initSchema
+      args:
+        executable: /bin/bash
+        chdir: "{{ hive_base }}"
+      when: hive_schema.stdout | trim == 'f'

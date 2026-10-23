@@ -1,0 +1,34 @@
+---
+- name: Загрузка данных в партиционированную таблицу
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  any_errors_fatal: true
+
+  tasks:
+    - name: Скопировать входные данные
+      ansible.builtin.copy:
+        src: "{{ item }}"
+        dest: "{{ hive_base }}/data/{{ item }}"
+        mode: "0640"
+      loop:
+        - colours-2026-10-22.tsv
+        - colours-2026-10-23.tsv
+
+    - name: Скопировать описание таблицы
+      ansible.builtin.template:
+        src: colours.sql.j2
+        dest: "{{ hive_base }}/data/colours.sql"
+        mode: "0640"
+
+    - name: Скопировать скрипт загрузки
+      ansible.builtin.template:
+        src: load-colours.sh.j2
+        dest: "{{ hive_base }}/load-colours.sh"
+        mode: "0750"
+
+    - name: Создать таблицу и загрузить две партиции
+      ansible.builtin.command:
+        argv: ["{{ hive_base }}/load-colours.sh"]
+        chdir: "{{ hive_base }}"

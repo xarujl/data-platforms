@@ -1,0 +1,15 @@
+[Unit]
+Description=Apache Hive {{ item.name }}
+After=network.target postgresql.service{% if item.name == 'hiveserver2' %} hive-metastore.service{% endif %}
+
+[Service]
+Type=simple
+User=hdfs
+Group=hadoop
+WorkingDirectory={{ hive_base }}
+Environment=HADOOP_HEAPSIZE_MAX={{ item.heap }}
+ExecStart=/bin/bash -c 'source {{ hive_base }}/env.sh; exec {{ hive_home }}/bin/hive --service {{ item.name }}'
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target

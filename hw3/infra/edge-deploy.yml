@@ -1,0 +1,38 @@
+---
+- name: Подготовка edge для ДЗ3
+  hosts: edge
+  gather_facts: false
+  vars_files:
+    - edge/group_vars/all.yml
+
+  tasks:
+    - name: Создание директорий проекта
+      ansible.builtin.file:
+        path: "{{ hive_edge_project_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - hw1/infra/edge/group_vars
+        - hw2/infra/edge
+        - hw3/infra/edge
+
+    - name: Копирование плейбуков, inventory и переменных ДЗ1
+      ansible.builtin.copy:
+        src: ../../hw1/infra/edge/
+        dest: "{{ hive_edge_project_dir }}/hw1/infra/edge/"
+        mode: preserve
+        directory_mode: "0755"
+
+    - name: Копирование плейбуков ДЗ2
+      ansible.builtin.copy:
+        src: ../../hw2/infra/edge/
+        dest: "{{ hive_edge_project_dir }}/hw2/infra/edge/"
+        mode: preserve
+        directory_mode: "0755"
+
+    - name: Копирование плейбуков ДЗ3
+      ansible.builtin.copy:
+        src: edge/
+        dest: "{{ hive_edge_project_dir }}/hw3/infra/edge/"
+        mode: preserve
+        directory_mode: "0755"

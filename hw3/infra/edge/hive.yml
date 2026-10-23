@@ -1,0 +1,50 @@
+---
+- name: Запуск Metastore и HiveServer2
+  hosts: namenode
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+
+  tasks:
+    - name: Создать службы Hive
+      ansible.builtin.template:
+        src: hive.service.j2
+        dest: "/etc/systemd/system/hive-{{ item.name }}.service"
+        mode: "0644"
+      loop:
+        - { name: metastore, heap: "{{ hive_metastore_heap_mb }}" }
+        - { name: hiveserver2, heap: "{{ hive_server_heap_mb }}" }
+      register: hive_units
+
+    - name: Запустить Metastore с актуальной конфигурацией
+      ansible.builtin.systemd_service:
+        name: hive-metastore
+        daemon_reload: true
+        enabled: false
+        state: "{{ 'restarted' if hive_configuration is changed or hive_environment is changed or hive_hadoop_config is changed or hive_units is changed or hive_jdbc is changed else 'started' }}"
+
+    - name: Дождаться Metastore
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 9083
+        timeout: 120
+
+    - name: Запустить HiveServer2 с актуальной конфигурацией
+      ansible.builtin.systemd_service:
+        name: hive-hiveserver2
+        enabled: false
+        state: "{{ 'restarted' if hive_configuration is changed or hive_environment is changed or hive_hadoop_config is changed or hive_units is changed or hive_jdbc is changed else 'started' }}"
+
+    - name: Дождаться SQL-интерфейса HiveServer2
+      become_user: hdfs
+      ansible.builtin.shell: |
+        source {{ hive_base }}/env.sh
+        timeout 20 beeline -u 'jdbc:hive2://127.0.0.1:10000/default' -n hdfs --force=false -e 'SELECT 1;'
+      args:
+        executable: /bin/bash
+        chdir: "{{ hive_base }}"
+      register: hive_ready
+      until: hive_ready.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source {{ hive_base }}/env.sh
+cd {{ hive_base }}
+timeout {{ hive_query_timeout_seconds }} beeline -u 'jdbc:hive2://127.0.0.1:10000/default' -n hdfs \
+    --force=false -f data/colours.sql
+for dt in 2026-10-22 2026-10-23; do
+    hdfs dfs -mkdir -p "/input/colours/$dt"
+    hdfs dfs -put -f "data/colours-$dt.tsv" "/input/colours/$dt/colours.tsv"
+    timeout {{ hive_query_timeout_seconds }} beeline -u 'jdbc:hive2://127.0.0.1:10000/test' -n hdfs \
+        --force=false -e "LOAD DATA INPATH '/input/colours/$dt/colours.tsv' OVERWRITE INTO TABLE colours PARTITION (dt='$dt');"
+done

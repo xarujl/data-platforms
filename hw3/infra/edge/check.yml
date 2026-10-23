@@ -1,0 +1,25 @@
+---
+- name: Проверка двух клиентов Hive
+  hosts: namenode
+  gather_facts: false
+  become: true
+  become_user: hdfs
+  any_errors_fatal: true
+
+  tasks:
+    - name: Скопировать проверку клиентов и партиций
+      ansible.builtin.template:
+        src: check-hive.sh.j2
+        dest: "{{ hive_base }}/check-hive.sh"
+        mode: "0750"
+
+    - name: Выполнить агрегацию двумя JDBC-клиентами
+      ansible.builtin.command:
+        argv: ["{{ hive_base }}/check-hive.sh"]
+        chdir: "{{ hive_base }}"
+      register: hive_check
+      changed_when: false
+
+    - name: Результат проверки
+      ansible.builtin.debug:
+        msg: "{{ hive_check.stdout }}"
