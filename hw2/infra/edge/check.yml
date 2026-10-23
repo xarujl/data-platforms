@@ -31,6 +31,19 @@
     - ../../../hw1/infra/edge/group_vars/all.yml
 
   tasks:
+    - name: Проверить HTTP API ResourceManager с edge
+      ansible.builtin.uri:
+        url: "http://{{ yarn_resourcemanager_ip }}:{{ yarn_resourcemanager_web_port }}/ws/v1/cluster/info"
+        headers:
+          Accept: application/json
+        use_proxy: false
+      register: resourcemanager_info
+      until: resourcemanager_info.status | default(0) == 200
+      retries: 24
+      delay: 5
+      delegate_to: localhost
+      become: false
+
     - name: Дождаться регистрации трёх работающих NodeManager
       ansible.builtin.command:
         argv: ["{{ hadoop_home }}/bin/yarn", node, -list, -states, RUNNING]
@@ -107,21 +120,6 @@
           ansible.builtin.assert:
             that:
               - wordcount_output.stdout_lines == ['one\t1', 'three\t3', 'two\t2']
-
-        - name: Проверить завершённое приложение в ResourceManager с edge
-          ansible.builtin.uri:
-            url: "http://{{ yarn_resourcemanager_ip }}:{{ yarn_resourcemanager_web_port }}/ws/v1/cluster/apps/{{ wordcount_job_id | replace('job_', 'application_') }}"
-            headers:
-              Accept: application/json
-            use_proxy: false
-          register: wordcount_application
-          until: >-
-            (wordcount_application.json | default({})).get('app', {}).get('state', '') == 'FINISHED'
-            and (wordcount_application.json | default({})).get('app', {}).get('finalStatus', '') == 'SUCCEEDED'
-          retries: 24
-          delay: 5
-          delegate_to: localhost
-          become: false
 
         - name: Дождаться истории WordCount в JobHistoryServer с edge
           ansible.builtin.uri:

@@ -13,7 +13,6 @@ yarn_log_dir: /var/lib/hadoop/yarn/log
 mapred_history_dir: /mr-history
 
 # Учебные VM: 2 CPU, 4 ГиБ RAM. На nn оставляем больше памяти демонам.
-yarn_check_resources: false
 yarn_node_memory_mb: "{{ 1024 if inventory_hostname in groups['namenode'] else 2048 }}"
 yarn_node_vcores: 2
 yarn_scheduler_minimum_mb: 512

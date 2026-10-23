@@ -8,7 +8,7 @@
 | nn (`namenode`) | ResourceManager, NodeManager, JobHistoryServer |
 | nn, dn0, dn1 (`datanodes`) | По одному NodeManager |
 
-После этапа ДЗ1 на трёх узлах должны быть установлены Hadoop 3.4.0 и Java 11, а HDFS — запущен с тремя живыми DataNode и выключенным safe mode. Пользователь демонов — `hdfs`, группа — `hadoop`, каталог Hadoop — `/opt/hadoop-3.4.0`. По умолчанию запуск сначала выполняет ДЗ1, включая установку Ansible на edge. При `--skip-hw1` HDFS и Ansible должны быть готовы заранее. Перед настройкой плейбук проверяет состав inventory, согласованность лимитов контейнеров и текущее состояние HDFS.
+После этапа ДЗ1 на трёх узлах должны быть установлены Hadoop 3.4.0 и Java 11, а HDFS — запущен с тремя живыми DataNode и выключенным safe mode. Пользователь демонов — `hdfs`, группа — `hadoop`, каталог Hadoop — `/opt/hadoop-3.4.0`. По умолчанию запуск сначала выполняет ДЗ1, включая установку Ansible на edge. При `--skip-hw1` HDFS и Ansible должны быть готовы заранее. Перед настройкой плейбук проверяет состав inventory, согласованность лимитов контейнеров и выход HDFS из safe mode.
 
 ## Inventory и настройки
 
@@ -66,9 +66,9 @@ cd /home/team/yarn-ansible/hw2/infra/edge
 
 `edge/site.yml` последовательно запускает:
 
-1. `prepare.yml` — исправляет привязку имени VM к loopback в `/etc/hosts`, проверяет HDFS, создаёт локальные каталоги YARN и каталоги истории в HDFS, записывает `yarn-site.xml`, `mapred-site.xml` и heap-настройки демонов.
-2. `yarn.yml` — запускает ResourceManager, три NodeManager и JobHistoryServer, ждёт доступности портов ResourceManager и JobHistoryServer с edge. Готовность NodeManager проверяется через HTTP в `check.yml`.
-3. `check.yml` — проверяет здоровье NodeManager через HTTP, регистрацию трёх узлов, запускает WordCount, сверяет результат и проверяет завершение в ResourceManager и JobHistoryServer.
+1. `prepare.yml` — исправляет привязку имени VM к loopback в `/etc/hosts`, проверяет выход HDFS из safe mode, создаёт локальные каталоги YARN и каталоги истории в HDFS, записывает `yarn-site.xml`, `mapred-site.xml` и heap-настройки демонов.
+2. `yarn.yml` — запускает ResourceManager, три NodeManager и JobHistoryServer, ждёт доступности web-портов ResourceManager и JobHistoryServer с edge. Готовность NodeManager проверяется через HTTP в `check.yml`.
+3. `check.yml` — проверяет HTTP API ResourceManager, здоровье NodeManager через HTTP и регистрацию трёх узлов, запускает WordCount, сверяет результат и проверяет историю в JobHistoryServer.
 
 WordCount использует уникальные локальный и HDFS-каталоги, удаляемые после проверки. На выполнение задания отводится 300 секунд; лимит меняется через `yarn_smoke_timeout_seconds`. При ошибке или таймауте скрипт пытается остановить найденное тестовое приложение. История задания остаётся в JobHistoryServer.
 
@@ -106,7 +106,7 @@ HDFS не форматируется, его конфигурация и дем�
 
 На nn оставлено больше памяти для NameNode и остальных демонов. Проверка физической памяти контейнеров включена; проверка виртуальной памяти отключена, чтобы резервирование адресного пространства JVM не приводило к остановке небольших контейнеров. Если меняются ресурсы VM или нагрузка, пересмотрите лимиты в `edge/group_vars/all.yml`.
 
-Сбор фактических RAM/CPU и проверка соответствия лимитов ресурсам VM по умолчанию отключены. Чтобы выполнить их при следующем деплое, задайте `yarn_check_resources: true` в `edge/group_vars/all.yml`. Проверка согласованности самих лимитов выполняется всегда, без обращения к VM.
+Проверка согласованности лимитов выполняется без сбора RAM/CPU с VM.
 
 Для каталогов истории устанавливаются владелец `hdfs:hadoop` и права `/mr-history` — `755`, `tmp` — `1777`, `done` — `750`.
 

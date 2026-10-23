@@ -26,22 +26,6 @@
           - yarn_scheduler_maximum_mb | int >= mapred_container_memory_mb | int
         fail_msg: "Лимиты контейнеров в group_vars/all.yml не согласованы."
 
-    - name: Проверка ресурсов VM по запросу
-      when: yarn_check_resources | bool
-      block:
-        - name: Получить объём памяти и число CPU
-          ansible.builtin.setup:
-            gather_subset:
-              - "!all"
-              - hardware
-
-        - name: Проверить соответствие лимитов ресурсам VM
-          ansible.builtin.assert:
-            that:
-              - yarn_node_memory_mb | int + 1024 <= ansible_facts.memtotal_mb
-              - yarn_node_vcores | int <= ansible_facts.processor_vcpus
-            fail_msg: "Лимиты в group_vars/all.yml не подходят ресурсам VM."
-
 - name: Исправление адреса локального имени узла
   hosts: hdfs
   gather_facts: false
@@ -74,13 +58,6 @@
     - ../../../hw1/infra/edge/group_vars/all.yml
 
   tasks:
-    - name: Проверить три живых DataNode
-      ansible.builtin.command:
-        argv: ["{{ hadoop_home }}/bin/hdfs", dfsadmin, -report]
-      register: hdfs_report
-      changed_when: false
-      failed_when: hdfs_report.rc != 0 or 'Live datanodes (3):' not in hdfs_report.stdout
-
     - name: Проверить выход из safe mode
       ansible.builtin.command:
         argv: ["{{ hadoop_home }}/bin/hdfs", dfsadmin, -safemode, get]

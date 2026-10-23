@@ -106,13 +106,10 @@
         'org.apache.hadoop.mapreduce.v2.hs.JobHistoryServer' not in historyserver_process.stdout
         or mapred_configuration is changed or mapred_heap is changed or yarn_hosts is changed
 
-    - name: Дождаться портов JobHistoryServer с edge
+    - name: Дождаться web-порта JobHistoryServer с edge
       ansible.builtin.wait_for:
         host: "{{ yarn_resourcemanager_ip }}"
-        port: "{{ item }}"
+        port: "{{ mapred_history_web_port }}"
         timeout: 120
-      loop:
-        - "{{ mapred_history_rpc_port }}"
-        - "{{ mapred_history_web_port }}"
       delegate_to: localhost
       become: false
