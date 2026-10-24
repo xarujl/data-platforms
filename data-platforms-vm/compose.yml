@@ -1,0 +1,64 @@
+
+name: hadoop-lab
+
+x-node: &node
+  build: ./docker
+  restart: unless-stopped
+  networks:
+    hadoop_net: {}
+
+services:
+  edge:
+    <<: *node
+    hostname: team-35-en
+    ports:
+      - "127.0.0.1:2222:22"
+    volumes:
+      - ./ssh/host_edge.pub:/run/keys/authorized.pub:ro
+      - ./ssh/team_internal:/run/keys/team_internal:ro
+      - ./downloads:~/downloads:ro
+    networks:
+      hadoop_net:
+        ipv4_address: 10.35.0.10
+        aliases:
+          - team-35-en
+
+  namenode:
+    <<: *node
+    hostname: team-35-nn
+    volumes:
+      - ./ssh/team_internal.pub:/run/keys/authorized.pub:ro
+    networks:
+      hadoop_net:
+        ipv4_address: 10.35.0.11
+        aliases:
+          - team-35-nn
+
+  datanode0:
+    <<: *node
+    hostname: team-35-00
+    volumes:
+      - ./ssh/team_internal.pub:/run/keys/authorized.pub:ro
+    networks:
+      hadoop_net:
+        ipv4_address: 10.35.0.12
+        aliases:
+          - team-35-00
+
+  datanode1:
+    <<: *node
+    hostname: team-35-01
+    volumes:
+      - ./ssh/team_internal.pub:/run/keys/authorized.pub:ro
+    networks:
+      hadoop_net:
+        ipv4_address: 10.35.0.13
+        aliases:
+          - team-35-01
+
+networks:
+  hadoop_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.35.0.0/24
